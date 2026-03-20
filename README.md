@@ -27,6 +27,13 @@ I use this for AI/tech news. Gets me the signal without the scroll.
 
 **Nodes:** Schedule Trigger → RSS Feed Read → Code (deduplicate) → HTTP Request (LLM summarize) → Merge → Send Email / Telegram
 
+## Requirements
+
+- A running [n8n](https://n8n.io/) instance (self-hosted recommended).
+- An LLM API endpoint (e.g., local Ollama, OpenAI, Anthropic).
+- A Telegram Bot Token and Chat ID.
+- Basic familiarity with n8n concepts like credentials and nodes.
+
 ## How to import
 
 1. In your n8n instance: **Workflows → Import from File**
