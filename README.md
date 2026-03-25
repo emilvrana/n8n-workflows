@@ -13,6 +13,20 @@ Useful for: alerting pipelines, CI/CD notifications, anything that POSTs a JSON 
 
 **Nodes:** Webhook → Code (extract fields) → HTTP Request (OpenAI/local LLM) → Telegram
 
+**Example Webhook Payload:**
+
+The workflow is generic, but here's an example of what it might expect for a CI/CD notification:
+
+```json
+{
+  "repository": "emilvrana/n8n-workflows",
+  "status": "success",
+  "commit": "a1b2c3d",
+  "author": "Emil Vrána",
+  "message": "feat: Add example payload to README"
+}
+```
+
 ### 2. `scheduled-healthcheck.json`
 Pings a list of HTTP endpoints on a schedule. If any return a non-2xx status or time out, sends a Telegram alert with the failing service name and status code.
 
@@ -61,3 +75,8 @@ More on the infrastructure: [Running a Local LLM on Your Own Server](https://emi
 ---
 
 Issues and PRs welcome. These are production configs, so I keep them lean.
+
+## License
+
+[MIT](./LICENSE)
+
