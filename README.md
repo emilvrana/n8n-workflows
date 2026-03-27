@@ -41,6 +41,26 @@ I use this for AI/tech news. Gets me the signal without the scroll.
 
 **Nodes:** Schedule Trigger → RSS Feed Read → Code (deduplicate) → HTTP Request (LLM summarize) → Merge → Send Email / Telegram
 
+### 4. `github-activity-digest.json`
+Fetches commits and updated issues from a configurable list of GitHub repos over the last 24 hours, runs the raw activity through a local LLM to produce a short prose summary, and sends it to Telegram.
+
+Useful when you maintain several repos and want one morning message instead of checking each one. Works with private repos (add a GitHub token). No GitHub webhooks needed — pull-based, runs on a schedule.
+
+**Nodes:** Schedule Trigger → Code (configure repos) → HTTP Request (commits) + HTTP Request (issues) → Code (merge) → IF (any activity?) → HTTP Request (LLM) → Code (format) → Telegram
+
+**Configuration:**
+- Edit the `Configure Repos` node — replace the repo list with your own
+- Set `lookbackHours` to match your schedule interval (default: 24)
+- Add a GitHub token to the HTTP Request headers for private repos / higher rate limits
+- Swap `http://localhost:11434` in `LLM Summarize` for OpenAI or any OpenAI-compatible endpoint
+
+**Example output:**
+```
+📊 GitHub Digest — Fri, 27 Mar
+
+Three commits landed in n8n-workflows today: README updates and a new github-activity-digest workflow. No new issues were opened. local-rag-stack had one issue updated with a fix for the Docker Compose volume mapping.
+```
+
 ## Requirements
 
 - A running [n8n](https://n8n.io/) instance (self-hosted recommended).
