@@ -41,7 +41,30 @@ I use this for AI/tech news. Gets me the signal without the scroll.
 
 **Nodes:** Schedule Trigger → RSS Feed Read → Code (deduplicate) → HTTP Request (LLM summarize) → Merge → Send Email / Telegram
 
-### 4. `github-activity-digest.json`
+### 4. `ai-cost-monitor.json`
+Polls the OpenAI and Anthropic usage APIs daily, compares spending against configured monthly budget thresholds, and sends a Telegram alert if you're approaching or over budget. Sends a quiet green summary if everything is under control.
+
+Useful when you're running multiple AI projects and want one Telegram message instead of logging into two dashboards to check spend.
+
+**Nodes:** Schedule Trigger → Code (configure budgets) → HTTP Request (OpenAI usage) + HTTP Request (Anthropic usage) → Code (aggregate) → IF (any alerts?) → Code (format) → Telegram
+
+**Configuration:**
+- Set `monthlyBudget` and `alertThreshold` per provider in the `Configure` node
+- Add HTTP Header Auth credentials: `Authorization: Bearer <key>` for OpenAI, `x-api-key: <key>` for Anthropic
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
+- Default schedule: 9:00 AM daily. Adjust in Schedule Trigger
+
+**Example alert output:**
+```
+⚠️ AI API Cost Alert — 2026-03-01 to 2026-03-29
+
+🟡 OpenAI: $41.20 / $50 (82.4%)
+`████████░░`
+🟢 Anthropic: $34.50 / $100 (34.5%)
+`███░░░░░░░`
+```
+
+### 5. `github-activity-digest.json`
 Fetches commits and updated issues from a configurable list of GitHub repos over the last 24 hours, runs the raw activity through a local LLM to produce a short prose summary, and sends it to Telegram.
 
 Useful when you maintain several repos and want one morning message instead of checking each one. Works with private repos (add a GitHub token). No GitHub webhooks needed — pull-based, runs on a schedule.

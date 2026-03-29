@@ -1,0 +1,222 @@
+{
+  "name": "AI API Cost Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Runs every day at 9:00 AM. Adjust to your timezone in n8n settings."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Configure your API providers and monthly budget thresholds here\nconst config = {\n  openai: {\n    enabled: true,\n    apiKey: $env.OPENAI_API_KEY,\n    monthlyBudget: 50,  // USD\n    alertThreshold: 0.8  // alert at 80% of budget\n  },\n  anthropic: {\n    enabled: true,\n    apiKey: $env.ANTHROPIC_API_KEY,\n    monthlyBudget: 100,  // USD\n    alertThreshold: 0.8\n  }\n};\n\n// Get first day of current month\nconst now = new Date();\nconst startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];\nconst today = now.toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    config,\n    period: { start: startOfMonth, end: today },\n    timestamp: now.toISOString()\n  }\n}];"
+      },
+      "id": "configure",
+      "name": "Configure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/dashboard/billing/usage",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_date",
+              "value": "={{ $json.period.start }}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{ $json.period.end }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "openai-usage",
+      "name": "OpenAI Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 180],
+      "notes": "Credential: HTTP Header Auth. Header name: Authorization, value: Bearer YOUR_OPENAI_KEY"
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/usage",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_time",
+              "value": "={{ $('Configure').item.json.period.start }}T00:00:00Z"
+            },
+            {
+              "name": "end_time",
+              "value": "={{ $('Configure').item.json.period.end }}T23:59:59Z"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "anthropic-usage",
+      "name": "Anthropic Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 420],
+      "notes": "Credential: HTTP Header Auth. Header name: x-api-key, value: YOUR_ANTHROPIC_KEY"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge and normalize usage data from both providers\nconst config = $('Configure').item.json.config;\nconst period = $('Configure').item.json.period;\n\nconst results = [];\n\n// --- OpenAI ---\ntry {\n  const oaiData = $('OpenAI Usage').item.json;\n  const totalCents = oaiData.total_usage || 0; // OpenAI returns cents\n  const totalUSD = totalCents / 100;\n  const budget = config.openai.monthlyBudget;\n  const ratio = totalUSD / budget;\n  results.push({\n    provider: 'OpenAI',\n    spent: totalUSD,\n    budget,\n    ratio,\n    overThreshold: ratio >= config.openai.alertThreshold,\n    overBudget: ratio >= 1.0\n  });\n} catch (e) {\n  results.push({ provider: 'OpenAI', error: e.message });\n}\n\n// --- Anthropic ---\ntry {\n  const anthData = $('Anthropic Usage').item.json;\n  // Anthropic usage endpoint returns aggregated cost in USD\n  const totalUSD = anthData.total_cost_usd || 0;\n  const budget = config.anthropic.monthlyBudget;\n  const ratio = totalUSD / budget;\n  results.push({\n    provider: 'Anthropic',\n    spent: totalUSD,\n    budget,\n    ratio,\n    overThreshold: ratio >= config.anthropic.alertThreshold,\n    overBudget: ratio >= 1.0\n  });\n} catch (e) {\n  results.push({ provider: 'Anthropic', error: e.message });\n}\n\nconst hasAlerts = results.some(r => r.overThreshold || r.overBudget || r.error);\n\nreturn [{ json: { results, hasAlerts, period } }];"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-alerts",
+              "leftValue": "={{ $json.hasAlerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-alerts",
+      "name": "Any Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Telegram alert message\nconst { results, period } = $json;\n\nconst lines = [`⚠️ *AI API Cost Alert* — ${period.start} to ${period.end}\\n`];\n\nfor (const r of results) {\n  if (r.error) {\n    lines.push(`• *${r.provider}*: error fetching usage — ${r.error}`);\n    continue;\n  }\n  const bar = '█'.repeat(Math.round(r.ratio * 10)) + '░'.repeat(10 - Math.round(Math.min(r.ratio, 1) * 10));\n  const icon = r.overBudget ? '🔴' : r.overThreshold ? '🟡' : '🟢';\n  const pct = (r.ratio * 100).toFixed(1);\n  lines.push(`${icon} *${r.provider}*: $${r.spent.toFixed(2)} / $${r.budget} (${pct}%)\\n\\`${bar}\\``);\n}\n\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format daily summary (no alerts — all green)\nconst { results, period } = $json;\n\nconst lines = [`✅ *AI API Daily Summary* — ${period.start}\\n`];\n\nfor (const r of results) {\n  if (r.error) continue;\n  const pct = (r.ratio * 100).toFixed(1);\n  lines.push(`• *${r.provider}*: $${r.spent.toFixed(2)} / $${r.budget} (${pct}% of budget)`);\n}\n\nreturn [{ json: { message: lines.join('\\n') } }];"
+      },
+      "id": "format-summary",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-alert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1460, 200],
+      "notes": "Add your Telegram Bot credential here."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-summary",
+      "name": "Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1460, 400],
+      "notes": "Optional: send daily green summaries too. Delete this node to only alert on thresholds."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Configure", "type": "main", "index": 0 }]]
+    },
+    "Configure": {
+      "main": [
+        [
+          { "node": "OpenAI Usage", "type": "main", "index": 0 },
+          { "node": "Anthropic Usage", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "OpenAI Usage": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Anthropic Usage": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Results": {
+      "main": [[{ "node": "Any Alerts?", "type": "main", "index": 0 }]]
+    },
+    "Any Alerts?": {
+      "main": [
+        [{ "node": "Format Alert", "type": "main", "index": 0 }],
+        [{ "node": "Format Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Alert": {
+      "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]]
+    },
+    "Format Summary": {
+      "main": [[{ "node": "Telegram Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
