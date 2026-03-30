@@ -84,6 +84,13 @@ Useful when you maintain several repos and want one morning message instead of c
 Three commits landed in n8n-workflows today: README updates and a new github-activity-digest workflow. No new issues were opened. local-rag-stack had one issue updated with a fix for the Docker Compose volume mapping.
 ```
 
+### 6. `docker-compose-backup.json`
+Scheduled backup of Docker Compose configurations with Telegram notifications. Archives `.env`, `docker-compose.yml`, and config files to timestamped tarballs, rotates backups older than 7 days, and sends success/failure alerts.
+
+Useful for: disaster recovery for self-hosted infrastructure without relying on full VM backups. Captures the *configuration* (the valuable, hard-to-rebuild part) separately from data volumes.
+
+**Nodes:** Schedule Trigger → Execute Command (backup) → Execute Command (cleanup) → IF (check success) → Telegram
+
 ## Requirements
 
 - A running [n8n](https://n8n.io/) instance (self-hosted recommended).
