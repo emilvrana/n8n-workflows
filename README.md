@@ -84,7 +84,27 @@ Useful when you maintain several repos and want one morning message instead of c
 Three commits landed in n8n-workflows today: README updates and a new github-activity-digest workflow. No new issues were opened. local-rag-stack had one issue updated with a fix for the Docker Compose volume mapping.
 ```
 
-### 6. `docker-compose-backup.json`
+### 6. `ssl-expiry-monitor.json`
+Checks SSL certificate expiry dates for a configurable list of domains. Runs on a schedule (default: daily). If any certificate is within the warning threshold (default: 14 days) or critical threshold (default: 7 days), sends an alert to Telegram with 🔴/🟡 icons. If everything is fine, sends a quiet 🟢 summary.
+
+Uses `openssl s_client` on the n8n host — so it tests the actual certificate chain your users see, not just the domain's stated expiry. Works for Let's Encrypt, commercial CAs, and self-signed certs alike.
+
+**Nodes:** Schedule Trigger → Code (configure domains) → Execute Command (openssl) → Code (parse + threshold) → IF (alert needed?) → Code (format) → Telegram
+
+**Configuration:**
+- Edit the `Configure Domains` node — add your domains and adjust `warningDays` / `criticalDays`
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
+- Requires `openssl` on the n8n host (available on most Linux/macOS systems)
+
+**Example alert output:**
+```
+🔴 SSL Certificate Alert
+
+🔴 aiadoption.cz: 3 days left (expires 2026-05-28)
+🟡 staging.aiadoption.cz: 12 days left (expires 2026-06-06)
+```
+
+### 7. `docker-compose-backup.json`
 Scheduled backup of Docker Compose configurations with Telegram notifications. Archives `.env`, `docker-compose.yml`, and config files to timestamped tarballs, rotates backups older than 7 days, and sends success/failure alerts.
 
 Useful for: disaster recovery for self-hosted infrastructure without relying on full VM backups. Captures the *configuration* (the valuable, hard-to-rebuild part) separately from data volumes.

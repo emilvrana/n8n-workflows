@@ -1,0 +1,177 @@
+{
+  "name": "SSL Expiry Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const domains = [\n  { domain: 'aiadoption.cz', warningDays: 14, criticalDays: 7 },\n  { domain: 'emil.aiadoption.cz', warningDays: 14, criticalDays: 7 },\n  // Add your domains here\n];\n\nreturn domains.map(d => ({ json: d }));"
+      },
+      "id": "configure-domains",
+      "name": "Configure Domains",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "command": "=openssl s_client -connect {{ $json.domain }}:443 -servername {{ $json.domain }} </dev/null 2>/dev/null | openssl x509 -noout -dates -subject"
+      },
+      "id": "check-ssl",
+      "name": "Check SSL",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.stdout || '';\nconst notAfterMatch = output.match(/notAfter=(.+)/);\nif (!notAfterMatch) {\n  return [{ json: { domain: $input.first().json.domain || 'unknown', status: 'error', message: 'Could not parse certificate', daysLeft: -1 } }];\n}\n\nconst expiryDate = new Date(notAfterMatch[1]);\nconst now = new Date();\nconst daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));\nconst item = $input.first().json;\n\nlet status = 'ok';\nif (daysLeft <= (item.criticalDays || 7)) status = 'critical';\nelse if (daysLeft <= (item.warningDays || 14)) status = 'warning';\n\nreturn [{ json: { domain: item.domain, status, daysLeft, expiryDate: expiryDate.toISOString() } }];"
+      },
+      "id": "parse-result",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-alert",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-alert",
+      "name": "Needs Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst lines = items.map(i => {\n  const d = i.json;\n  const icon = d.status === 'critical' ? '🔴' : '🟡';\n  return `${icon} ${d.domain}: ${d.daysLeft} days left (expires ${d.expiryDate.split('T')[0]})`;\n});\n\nconst hasCritical = items.some(i => i.json.status === 'critical');\nconst header = hasCritical ? '🔴 SSL Certificate Alert' : '🟡 SSL Certificate Warning';\nconst msg = `${header}\\n\\n${lines.join('\\n')}`;\n\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "send-telegram",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// All OK — quiet summary\nconst items = $input.all();\nconst lines = items.map(i => `🟢 ${i.json.domain}: ${i.json.daysLeft} days`);\nconst msg = `🟢 SSL Check — All Good\\n\\n${lines.join('\\n')}`;\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "format-ok",
+      "name": "Format OK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "send-ok",
+      "name": "Telegram OK",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1560, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Configure Domains", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Configure Domains": {
+      "main": [
+        [
+          { "node": "Check SSL", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Check SSL": {
+      "main": [
+        [
+          { "node": "Parse Result", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse Result": {
+      "main": [
+        [
+          { "node": "Needs Alert?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Needs Alert?": {
+      "main": [
+        [
+          { "node": "Format Alert", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Format OK", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [
+          { "node": "Telegram Alert", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Format OK": {
+      "main": [
+        [
+          { "node": "Telegram OK", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  }
+}
