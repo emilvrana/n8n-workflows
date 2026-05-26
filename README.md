@@ -104,7 +104,27 @@ Uses `openssl s_client` on the n8n host — so it tests the actual certificate c
 🟡 staging.aiadoption.cz: 12 days left (expires 2026-06-06)
 ```
 
-### 7. `docker-compose-backup.json`
+### 7. `log-disk-monitor.json`
+Checks disk usage of configurable log directories on a schedule (default: every 6 hours). Calculates usage percentage against partition capacity, compares against warning and critical thresholds per directory, and sends a Telegram alert with visual progress bars when thresholds are breached. Sends a quiet 🟢 summary when everything is fine.
+
+Useful for: catching log bloat before it fills a partition and takes down services. Docker containers are notorious for unbounded logs — this catches it early.
+
+**Nodes:** Schedule Trigger → Code (configure directories) → Execute Command (du + df) → Code (parse + threshold) → IF (alert needed?) → Code (format) → Telegram
+
+**Configuration:**
+- Edit the `Configure Directories` node — add your log directories and set `warningPercent` / `criticalPercent`
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
+- Requires `du` and `df` on the n8n host (available on all Linux/macOS systems)
+
+**Example alert output:**
+```
+⚠️ Log Disk Usage Alert — 2026-05-26
+
+🔴 /var/log: 890.2 MB used (88%) `████████░░`
+🟡 /opt/appdata/logs: 340.5 MB used (65%) `█████░░░░░`
+```
+
+### 8. `docker-compose-backup.json`
 Scheduled backup of Docker Compose configurations with Telegram notifications. Archives `.env`, `docker-compose.yml`, and config files to timestamped tarballs, rotates backups older than 7 days, and sends success/failure alerts.
 
 Useful for: disaster recovery for self-hosted infrastructure without relying on full VM backups. Captures the *configuration* (the valuable, hard-to-rebuild part) separately from data volumes.
