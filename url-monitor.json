@@ -1,0 +1,210 @@
+{
+  "name": "URL Uptime Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const urls = [\n  { name: 'Main Site', url: 'https://emil.aiadoption.cz', expectedStatus: 200, maxResponseTimeMs: 5000 },\n  { name: 'API Health', url: 'https://emil.aiadoption.cz/api/health', expectedStatus: 200, maxResponseTimeMs: 3000 },\n  { name: 'RSS Feed', url: 'https://emil.aiadoption.cz/blog/index.xml', expectedStatus: 200, maxResponseTimeMs: 5000 }\n];\n\nreturn urls.map(u => ({ json: u }));"
+      },
+      "id": "configure-urls",
+      "name": "Configure URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "http-check",
+      "name": "Check URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst config = $input.item.json;\n// config comes from the previous Split In Batches/loop context\n// We need to get the config from the Configure URLs node\nconst urls = [\n  { name: 'Main Site', url: 'https://emil.aiadoption.cz', expectedStatus: 200, maxResponseTimeMs: 5000 },\n  { name: 'API Health', url: 'https://emil.aiadoption.cz/api/health', expectedStatus: 200, maxResponseTimeMs: 3000 },\n  { name: 'RSS Feed', url: 'https://emil.aiadoption.cz/blog/index.xml', expectedStatus: 200, maxResponseTimeMs: 5000 }\n];\n\nreturn [{\n  json: {\n    allResults: items.map((item, index) => {\n      const cfg = urls[index];\n      const status = item.json.status;\n      const responseTime = item.json.responseTimeMs || 0;\n      const isDown = status !== cfg.expectedStatus || responseTime > cfg.maxResponseTimeMs;\n      const isSlow = !isDown && responseTime > cfg.maxResponseTimeMs * 0.8;\n      let severity = '🟢';\n      if (isDown) severity = '🔴';\n      else if (isSlow) severity = '🟡';\n      return {\n        name: cfg.name,\n        url: cfg.url,\n        status: status,\n        responseTimeMs: responseTime,\n        expectedStatus: cfg.expectedStatus,\n        maxResponseTimeMs: cfg.maxResponseTimeMs,\n        isDown: isDown,\n        isSlow: isSlow,\n        severity: severity\n      };\n    })\n  }\n}];"
+      },
+      "id": "evaluate-results",
+      "name": "Evaluate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $input.item.json.allResults;\nconst hasAlert = results.some(r => r.isDown || r.isSlow);\n\nlet message;\nif (hasAlert) {\n  const lines = results.map(r => {\n    let line = `${r.severity} ${r.name}: ${r.status} (${r.responseTimeMs}ms`;\n    if (r.isDown) line += `, expected ${r.expectedStatus}`;\n    if (r.isSlow) line += `, slow (limit ${r.maxResponseTimeMs}ms)`;\n    return line;\n  });\n  message = `⚠️ URL Monitor Alert\\n\\n${lines.join('\\n')}`;\n} else {\n  message = `✅ All URLs healthy\\n\\n${results.map(r => `${r.severity} ${r.name}: ${r.status} (${r.responseTimeMs}ms)`).join('\\n')}`;\n}\n\nreturn [{ json: { message, hasAlert } }];"
+      },
+      "id": "format-message",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-alert",
+              "leftValue": "={{ $json.hasAlert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-alert",
+      "name": "Has Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-alert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1570, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $('Format Message').item.json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-ok",
+      "name": "Telegram OK",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1570, 400]
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Configure URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure URLs": {
+      "main": [
+        [
+          {
+            "node": "Check URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check URL": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Results": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Has Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Alert?": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "monitoring"
+    },
+    {
+      "name": "telegram"
+    }
+  ]
+}

@@ -131,6 +131,36 @@ Useful for: disaster recovery for self-hosted infrastructure without relying on 
 
 **Nodes:** Schedule Trigger → Execute Command (backup) → Execute Command (cleanup) → IF (check success) → Telegram
 
+### 9. `url-monitor.json`
+Checks a configurable list of URLs on a schedule (default: every 5 minutes). Measures response time and status code against expected values, and sends a Telegram alert when a URL is down or slow. Sends a quiet 🟢 summary when everything is healthy.
+
+Complements `scheduled-healthcheck.json` — that one checks internal endpoints, this one checks external URLs your users actually visit. Tracks response time, not just status codes, so you catch degradation before it becomes downtime.
+
+**Nodes:** Schedule Trigger → Code (configure URLs) → HTTP Request (check each URL) → Code (evaluate results) → Code (format message) → IF (has alert?) → Telegram Alert / Telegram OK
+
+**Configuration:**
+- Edit the `Configure URLs` Code node — add your URLs with `name`, `url`, `expectedStatus`, and `maxResponseTimeMs`
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
+- Default schedule: every 5 minutes. Adjust in Schedule Trigger
+- A URL is flagged as 🟡 slow when response time exceeds 80% of `maxResponseTimeMs`, and 🔴 down when it exceeds `maxResponseTimeMs` or returns an unexpected status
+
+**Example alert output:**
+```
+⚠️ URL Monitor Alert
+
+🔴 API Health: 503 (4210ms, expected 200)
+🟡 Main Site: 200 (4320ms, slow, limit 5000ms)
+```
+
+**Example healthy output:**
+```
+✅ All URLs healthy
+
+🟢 Main Site: 200 (340ms)
+🟢 API Health: 200 (120ms)
+🟢 RSS Feed: 200 (890ms)
+```
+
 ## Requirements
 
 - A running [n8n](https://n8n.io/) instance (self-hosted recommended).
