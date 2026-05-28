@@ -161,6 +161,26 @@ Complements `scheduled-healthcheck.json` — that one checks internal endpoints,
 🟢 RSS Feed: 200 (890ms)
 ```
 
+### 10. `slack-to-telegram-bridge.json`
+Forwards Slack messages from specified channels to Telegram in real time. Filters out bot messages, formats with channel name and sender, and delivers a clean Markdown notification.
+
+Useful when your team uses Slack but you want key messages forwarded to your personal Telegram — or when bridging notifications between two organizations that use different platforms.
+
+**Nodes:** Slack Trigger → IF (filter bots) → Set (format message) → Telegram
+
+**Configuration:**
+- Add Slack API credentials (requires a Slack app with `message.channels` event subscription)
+- Add Telegram API credentials (bot token from @BotFather)
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram node
+- Slack channel is set dynamically from the webhook payload — no hardcoding needed
+
+**Example output:**
+```
+💬 *Slack → #deployments*
+*@jan*: Production deploy v2.4.1 complete ✅
+⏰ 14:05 28.05.2026
+```
+
 ## Requirements
 
 - A running [n8n](https://n8n.io/) instance (self-hosted recommended).
