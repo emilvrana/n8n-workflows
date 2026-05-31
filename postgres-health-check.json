@@ -1,0 +1,115 @@
+{
+  "name": "Postgres Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Configure your thresholds and connection details\nconst config = {\n  // Update these for your setup\n  host: process.env.PGHOST || 'localhost',\n  port: process.env.PGPORT || 5432,\n  database: process.env.PGDATABASE || 'postgres',\n  user: process.env.PGUSER || 'postgres',\n  // Store password in PGPASSWORD env var or n8n credentials\n  thresholds: {\n    maxConnectionsPercent: 80,      // alert if connections > this % of max\n    replicationLagMs: 5000,         // alert if replication lag > 5 seconds\n    databaseSizeMB: 10240,           // warn if any DB > 10 GB\n    idleTransactionSec: 300,         // alert if idle in transaction > 5 min\n  },\n  telegramChatId: process.env.TELEGRAM_CHAT_ID || 'YOUR_CHAT_ID',\n};\n\nreturn [{ json: config }];"
+      },
+      "id": "configure",
+      "name": "Configure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "command": "=PGPASSWORD=$PGPASSWORD psql -h {{$json.host}} -p {{$json.port}} -U {{$json.user}} -d {{$json.database}} -t -A -c \"SELECT json_build_object('connections', (SELECT count(*) FROM pg_stat_activity), 'max_connections', (SELECT setting::int FROM pg_settings WHERE name='max_connections'), 'db_sizes', (SELECT json_agg(json_build_object('name', datname, 'size_mb', round(pg_database_size(datname)/1024.0/1024.0, 1))) FROM pg_database WHERE datistemplate = false), 'replication_lag', (SELECT CASE WHEN pg_is_in_recovery() THEN EXTRACT(EPOCH FROM now() - pg_last_xact_replay_timestamp()) * 1000 ELSE 0 END), 'idle_in_transaction', (SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction' AND now() - state_change > interval '5 minutes'), 'version', (SELECT version()))\""
+      },
+      "id": "query-postgres",
+      "name": "Query Postgres",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.stdout.trim();\nlet stats;\ntry {\n  stats = JSON.parse(raw);\n} catch {\n  return [{ json: { error: 'Failed to parse psql output', raw } }];\n}\n\nconst thresholds = $('Configure').first().json.thresholds;\nconst alerts = [];\nconst warnings = [];\n\n// Check connection usage\nconst connPct = Math.round((stats.connections / stats.max_connections) * 100);\nif (connPct >= thresholds.maxConnectionsPercent) {\n  alerts.push(`🔴 Connections: ${stats.connections}/${stats.max_connections} (${connPct}%)`);\n} else if (connPct >= thresholds.maxConnectionsPercent - 15) {\n  warnings.push(`🟡 Connections: ${stats.connections}/${stats.max_connections} (${connPct}%)`);\n}\n\n// Check replication lag\nif (stats.replication_lag > thresholds.replicationLagMs) {\n  alerts.push(`🔴 Replication lag: ${(stats.replication_lag / 1000).toFixed(1)}s`);\n}\n\n// Check database sizes\nfor (const db of (stats.db_sizes || [])) {\n  if (db.size_mb > thresholds.databaseSizeMB) {\n    warnings.push(`🟡 Database ${db.name}: ${db.size_mb} MB`);\n  }\n}\n\n// Check idle transactions\nif (stats.idle_in_transaction > 0) {\n  alerts.push(`🔴 Idle in transaction: ${stats.idle_in_transaction} sessions`);\n}\n\nconst hasAlert = alerts.length > 0 || warnings.length > 0;\n\nlet message = hasAlert ? '⚠️ Postgres Health Check\\n\\n' : '✅ Postgres Health Check\\n\\n';\n\nif (alerts.length > 0) {\n  message += alerts.join('\\n') + '\\n';\n}\nif (warnings.length > 0) {\n  message += warnings.join('\\n') + '\\n';\n}\nif (!hasAlert) {\n  message += `🟢 Connections: ${stats.connections}/${stats.max_connections} (${connPct}%)\\n`;\n  message += `🟢 Replication lag: ${(stats.replication_lag / 1000).toFixed(1)}s\\n`;\n  message += `🟢 Idle in transaction: ${stats.idle_in_transaction}`;\n}\n\nreturn [{ json: { message, hasAlert, stats } }];"
+      },
+      "id": "evaluate",
+      "name": "Evaluate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-has-alert",
+              "leftValue": "={{ $json.hasAlert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-alert",
+      "name": "Has Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Configure').first().json.telegramChatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-alert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Configure').first().json.telegramChatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "telegram-ok",
+      "name": "Telegram OK",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 100]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Configure", "type": "main", "index": 0 }]] },
+    "Configure": { "main": [[{ "node": "Query Postgres", "type": "main", "index": 0 }]] },
+    "Query Postgres": { "main": [[{ "node": "Evaluate Results", "type": "main", "index": 0 }]] },
+    "Evaluate Results": { "main": [[{ "node": "Has Alert?", "type": "main", "index": 0 }]] },
+    "Has Alert?": {
+      "main": [
+        [{ "node": "Telegram Alert", "type": "main", "index": 0 }],
+        [{ "node": "Telegram OK", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

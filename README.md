@@ -181,6 +181,36 @@ Useful when your team uses Slack but you want key messages forwarded to your per
 ⏰ 14:05 28.05.2026
 ```
 
+### 11. `postgres-health-check.json`
+Runs a single `psql` query on a schedule (default: every hour) that checks connection usage, replication lag, database sizes, and idle-in-transaction sessions. Evaluates results against configurable thresholds and sends a Telegram alert with 🔴/🟡 icons when something is off — or a quiet 🟢 summary when everything is fine.
+
+Complements `scheduled-healthcheck.json` and `url-monitor.json` — those check HTTP endpoints and external URLs, this checks your actual database health. Catches the things that slow creep up on you: connections leaking, replication falling behind, databases quietly growing.
+
+**Nodes:** Schedule Trigger → Code (configure thresholds) → Execute Command (psql query) → Code (evaluate results) → IF (alert needed?) → Code (format) → Telegram Alert / Telegram OK
+
+**Configuration:**
+- Edit the `Configure` node — set `host`, `port`, `database`, `user`, and thresholds
+- Store password in `PGPASSWORD` env var or n8n credentials
+- Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
+- Requires `psql` on the n8n host
+
+**Example alert output:**
+```
+⚠️ Postgres Health Check
+
+🔴 Connections: 182/200 (91%)
+🔴 Idle in transaction: 3 sessions
+```
+
+**Example healthy output:**
+```
+✅ Postgres Health Check
+
+🟢 Connections: 34/200 (17%)
+🟢 Replication lag: 0.1s
+🟢 Idle in transaction: 0
+```
+
 ## Requirements
 
 - A running [n8n](https://n8n.io/) instance (self-hosted recommended).
