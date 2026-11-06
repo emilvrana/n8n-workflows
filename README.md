@@ -115,6 +115,7 @@ Useful for: catching log bloat before it fills a partition and takes down servic
 - Edit the `Configure Directories` node — add your log directories and set `warningPercent` / `criticalPercent`
 - Set `TELEGRAM_CHAT_ID` env var or hardcode in the Telegram nodes
 - Requires `du` and `df` on the n8n host (available on all Linux/macOS systems)
+- A directory that doesn't exist or can't be read shows up as ⚪ in the message instead of being silently skipped
 
 **Example alert output:**
 ```

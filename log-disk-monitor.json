@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Configure directories to monitor and thresholds\n// Add more entries as needed\nconst config = {\n  directories: [\n    { path: '/var/log', warningPercent: 70, criticalPercent: 85 },\n    { path: '/opt/appdata/logs', warningPercent: 60, criticalPercent: 80 },\n    { path: '/home/docker/logs', warningPercent: 70, criticalPercent: 85 },\n  ],\n  };"
+        "jsCode": "// Configure directories to monitor and thresholds\n// Add more entries as needed\nconst config = {\n  directories: [\n    { path: '/var/log', warningPercent: 70, criticalPercent: 85 },\n    { path: '/opt/appdata/logs', warningPercent: 60, criticalPercent: 80 },\n    { path: '/home/docker/logs', warningPercent: 70, criticalPercent: 85 },\n  ],\n};\n\nreturn [{ json: config }];"
       },
       "id": "configure",
       "name": "Configure Directories",
@@ -40,7 +40,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const config = $items('Configure Directories')[0].json;\nconst raw = $items('Check Disk Usage')[0].json.stdout;\nconst lines = raw.trim().split('\\n');\n\nconst results = [];\nlet hasAlert = false;\n\nfor (const line of lines) {\n  const parts = line.trim().split(/\\s+/);\n  if (parts.length < 4) continue;\n  const [dirPath, usedKb, usedTotalKb, availKb] = parts;\n  const totalKb = parseInt(usedTotalKb) + parseInt(availKb);\n  const percent = totalKb > 0 ? Math.round((parseInt(usedKb) / totalKb) * 100) : 0;\n  const dirConfig = config.directories.find(d => d.path === dirPath);\n  if (!dirConfig) continue;\n\n  let level = '🟢';\n  if (percent >= dirConfig.criticalPercent) { level = '🔴'; hasAlert = true; }\n  else if (percent >= dirConfig.warningPercent) { level = '🟡'; hasAlert = true; }\n\n  const barLength = 10;\n  const filled = Math.round((percent / 100) * barLength);\n  const bar = '█'.repeat(filled) + '░'.repeat(barLength - filled);\n\n  results.push(`${level} ${dirPath}: ${(parseInt(usedKb)/1024).toFixed(1)} MB used (${percent}%) \\`${bar}\\``);\n}\n\nconst now = new Date().toISOString().split('T')[0];\nconst title = hasAlert ? '⚠️ Log Disk Usage Alert' : '🟢 Log Disk Check';\nconst message = `${title} — ${now}\\n\\n${results.join('\\n')}`;\n\nreturn [{ json: { message, hasAlert } }];"
+        "jsCode": "const config = $items('Configure Directories')[0].json;\nconst raw = $items('Check Disk Usage')[0].json.stdout;\nconst lines = raw.trim().split('\\n');\n\nconst results = [];\nlet hasAlert = false;\n\nfor (const line of lines) {\n  const parts = line.trim().split(/\\s+/);\n  // du/df print nothing for a missing or unreadable path: say so instead of dropping it\n  if (parts.length < 4) { results.push(`⚪ ${parts[0]}: not found or not readable`); continue; }\n  const [dirPath, usedKb, usedTotalKb, availKb] = parts;\n  const totalKb = parseInt(usedTotalKb) + parseInt(availKb);\n  const percent = totalKb > 0 ? Math.round((parseInt(usedKb) / totalKb) * 100) : 0;\n  const dirConfig = config.directories.find(d => d.path === dirPath);\n  if (!dirConfig) continue;\n\n  let level = '🟢';\n  if (percent >= dirConfig.criticalPercent) { level = '🔴'; hasAlert = true; }\n  else if (percent >= dirConfig.warningPercent) { level = '🟡'; hasAlert = true; }\n\n  const barLength = 10;\n  const filled = Math.round((percent / 100) * barLength);\n  const bar = '█'.repeat(filled) + '░'.repeat(barLength - filled);\n\n  results.push(`${level} ${dirPath}: ${(parseInt(usedKb)/1024).toFixed(1)} MB used (${percent}%) \\`${bar}\\``);\n}\n\nconst now = new Date().toISOString().split('T')[0];\nconst title = hasAlert ? '⚠️ Log Disk Usage Alert' : '🟢 Log Disk Check';\nconst message = `${title} — ${now}\\n\\n${results.join('\\n')}`;\n\nreturn [{ json: { message, hasAlert } }];"
       },
       "id": "parse-alerts",
       "name": "Parse & Format",
@@ -53,21 +53,21 @@
         "conditions": {
           "options": {
             "caseSensitive": true,
-            "leftExpression": "",
-            "type": "string"
+            "leftValue": "",
+            "typeValidation": "strict"
           },
           "conditions": [
             {
               "id": "has-alert",
               "leftValue": "={{ $json.hasAlert }}",
-              "rightValue": "true",
+              "rightValue": true,
               "operator": {
-                "type": "string",
+                "type": "boolean",
                 "operation": "equals"
               }
             }
           ],
-          "combinator": "any"
+          "combinator": "and"
         }
       },
       "id": "if-alert",
